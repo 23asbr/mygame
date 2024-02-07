@@ -1,112 +1,158 @@
-
-
-class Main extends Phaser.Scene {
-
-    // This function essentially loads things into our game
-    preload() {
-        this.load.spritesheet('plane', 'assets/planesheet.png', {frameWidth: 98, frameHeight: 83});
-        this.load.image('pipe', 'assets/pipe.png');
-        this.load.audio('jump', 'assets/jump.wav');
-    }
-
-    //  it runs once at the beginning of the game and
-    //  allows the user to place the things that they’ve preloaded with preload() and
-    //  create objects within our game such as animations, collision detectors, text, groups, and much more
-    create() {
-        //Додаємо літак на сцену
-        this.plane = this.physics.add.sprite(0, 0, 'plane')
-        //Масштабуємо літак
-        this.plane.setScale(0.65, 0.65);
-        //Встановлюємо опорну точку літака
-        this.plane.setOrigin(0, 0.5);
-        this.anims.create({
-            key: "planeAnimation",
-            frames: this.anims.generateFrameNumbers('plane', {frames: [0, 1, 3, 2]}),
-            frameRate: 10,
-            repeat: -1
-        });
-        this.plane.play("planeAnimation");
-
-        this.plane.body.gravity.y = 1000;
-        this.spaceBar = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
-        this.score = 0;
-        this.labelScore = this.add.text(20, 20, "0", {fontSize: 24, color: "black"});
-        this.pipes = this.physics.add.group();
-
-        this.timedEvent = this.time.addEvent({
-            delay: 1500,
-            callback: this.addRowOfPipes, //Цю функцію реалізуємо на наступному кроці
-            callbackScope: this,
-            loop: true
-        });
-        this.physics.add.overlap(this.plane, this.pipes, this.hitPipe, null, this);
-    }
-
-    hitPipe () {
-        if (this.plane.alive == false) return;
-    
-        this.timedEvent.remove(false);
-        this.plane.alive = false;
-    
-        this.pipes.children.each(function(pipe) {
-            pipe.body.velocity.x = 0;
-        });
-    }
-        //Функція для створення блоку труби
-    addOnePipe(x, y) {
-        var pipe = this.physics.add.sprite(x, y, 'pipe');
-        pipe.setOrigin(0, 0);
-        this.pipes.add(pipe);
-        pipe.body.velocity.x = -600;
-
-        pipe.collideWorldBounds = true;
-        pipe.outOfBoundsKill = true;
-    }
-    //Функція створення труби (стовпчик блоків)
-    addRowOfPipes() {
-        var hole = Math.floor(Math.random() * 13) + 1;
-        this.score += 1;
-        this.labelScore.text = this.score;
-        for (var i = 0; i < 15; i++) {
-            if (!(i >= hole && i <= hole + 2))
-                this.addOnePipe(1600, i * 60 + 10);
-        }
-    }
-    // While preload() and create() run only once at the start of the game, update() runs constantly.
-    update() {
-        if (this.plane.angle < 20) {
-            this.plane.angle += 1;
-        }
-        
-        if (this.plane.y < -500 || this.plane.y > 990) {
-            this.scene.restart();
-        }
-        if (this.spaceBar.isDown) {
-            this.jump();
-        }
-    }
-    jump() {
-        this.tweens.add({
-            targets: this.plane,
-            angle: -20,
-            duration: 100,
-            repeat: 1
-        });
-        this.plane.body.velocity.y = -350;
-    }
-}
-const config = {
+// конфігурація проекту
+var config = {
     type: Phaser.AUTO,
-    width: 1600,
-    height: 900,
-    scene: Main, // Цю сцену ми створимо на 4-му кроці
-    backgroundColor: '#71c5cf',
+    width: 800,
+    height: 600,
     physics: {
         default: 'arcade',
         arcade: {
-            gravity: {y: 0}
+            gravity: { y: 300 },
+            debug: false
         }
+    },
+    scene: {
+        preload: preload,
+        create: create,
+        update: update
     }
 };
 
-const game = new Phaser.Game(config);
+var game = new Phaser.Game(config);
+var score = 0;
+var scoreText; // додаємо рахунок
+function preload () // підгрузка всіх ассетів до початку гри
+{
+    this.load.image('sky', 'assets/sky.png');
+    this.load.image('ground', 'assets/platform.png');
+    this.load.image('star', 'assets/star.png');
+    this.load.image('bomb', 'assets/bomb.png');
+    this.load.spritesheet('dude', 
+        'assets/dude.png',
+        { frameWidth: 32, frameHeight: 48 }
+    );
+}
+
+function create () // створення самої гри
+{
+    this.add.image(400, 300, 'sky');
+    cursors = this.input.keyboard.createCursorKeys();
+
+    scoreText = this.add.text(16, 16, 'score: 0', { fontSize: '32px', fill: '#000' }); // наш рахунок
+    
+    platforms = this.physics.add.staticGroup(); // додаємо фізику платформам
+    
+
+    platforms.create(400, 568, 'ground').setScale(2).refreshBody();
+
+    platforms.create(600, 400, 'ground'); // наші платформи
+    platforms.create(50, 250, 'ground');
+    platforms.create(750, 220, 'ground');
+    player = this.physics.add.sprite(100, 450, 'dude'); // додаємо фізику нашому гравцю
+    player.body.setGravityY(300)
+    player.setBounce(0.2);
+    player.setCollideWorldBounds(true); // щоб не виходив за рівень
+    this.physics.add.collider(player, platforms); // щоб гравець при контакті з платформами міг стояти на них
+    
+    // додаємо фізику для зірок
+    this.physics.add.overlap(player, stars, collectStar, null, this);
+    this.physics.add.collider(stars, platforms);
+    bombs = this.physics.add.group(); // фізика для бомб
+
+    this.physics.add.collider(bombs, platforms);
+
+    this.physics.add.collider(player, bombs, hitBomb, null, this);
+    function hitBomb (player, bomb) // що повинні робити бомби
+    {
+        this.physics.pause(); 
+
+        player.setTint(0xff0000);
+
+        player.anims.play('turn');
+
+        gameOver = true;
+    }
+    function collectStar (player, star) // функція для збору зірок
+    {
+    star.disableBody(true, true);
+
+    score += 10;
+    scoreText.setText('Score: ' + score);
+
+    if (stars.countActive(true) === 0)
+    {
+        stars.children.iterate(function (child) {
+
+            child.enableBody(true, child.x, 0, true, true);
+
+        });
+
+        var x = (player.x < 400) ? Phaser.Math.Between(400, 800) : Phaser.Math.Between(0, 400);
+
+        var bomb = bombs.create(x, 16, 'bomb');
+        bomb.setBounce(1);
+        bomb.setCollideWorldBounds(true);
+        bomb.setVelocity(Phaser.Math.Between(-200, 200), 20);
+
+    }
+    }
+    stars = this.physics.add.group({
+        key: 'star',
+        repeat: 11,
+        setXY: { x: 12, y: 0, stepX: 70 }
+    });
+    
+    stars.children.iterate(function (child) {
+    
+        child.setBounceY(Phaser.Math.FloatBetween(0.4, 0.8));
+    
+    });
+
+    // анімація
+    this.anims.create({ 
+        key: 'left',
+        frames: this.anims.generateFrameNumbers('dude', { start: 0, end: 3 }),
+        frameRate: 10,
+        repeat: -1
+    });
+
+    this.anims.create({
+        key: 'turn',
+        frames: [ { key: 'dude', frame: 4 } ],
+        frameRate: 20
+    });
+
+    this.anims.create({
+        key: 'right',
+        frames: this.anims.generateFrameNumbers('dude', { start: 5, end: 8 }),
+        frameRate: 10,
+        repeat: -1
+    });
+}
+
+function update ()
+{
+    // яка клавіша за що відповідає
+    if (cursors.left.isDown)
+    {
+        player.setVelocityX(-160);
+
+        player.anims.play('left', true);
+    }
+    else if (cursors.right.isDown)
+    {
+        player.setVelocityX(160);
+
+        player.anims.play('right', true);
+    }
+    else
+    {
+        player.setVelocityX(0);
+
+        player.anims.play('turn');
+    }
+
+    if (cursors.up.isDown && player.body.touching.down)
+    {
+        player.setVelocityY(-330);
+    }
+}
